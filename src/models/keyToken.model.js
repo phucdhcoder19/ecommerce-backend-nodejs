@@ -25,10 +25,6 @@ const keyTokenSchema = new Schema(
       type: Array,
       default: [],
     },
-    refreshTokensUsed: {
-      type: Array,
-      default: [], // những refresh token đã sử dụng mà sử dụng lại thì đặt nghi vấn
-    },
     refreshToken: {
       type: String,
       required: true,

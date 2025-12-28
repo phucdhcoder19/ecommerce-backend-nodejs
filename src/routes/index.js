@@ -6,8 +6,12 @@ const router = express.Router();
 router.use(apiKey);
 router.use(checkPermission("0000"));
 //check permission
-router.use("/v1/api", require("./access"));
 router.use("/v1/api/products", require("./product"));
+router.use("/v1/api", require("./access"));
+router.use("/v1/api/cart", require("./cart"));
+router.use("/v1/api/checkout", require("./checkout"));
+router.use("/v1/api/inventory", require("./inventory"));
+router.use("/v1/api/comments", require("./comment"));
 // router.get("", (req, res, next) => {
 //   return res.status(200).json({ message: "Welcome to my API" });
 // });

@@ -86,6 +86,8 @@ const furnitureSchema = new Schema(
   }
 );
 
+//create index for text search on product_name and product_description
+productSchema.index({ product_name: "text", product_description: "text" });
 module.exports = {
   product: model(DOCUMENT_NAME, productSchema),
   electronic: model("Electronics", electronicSchema),

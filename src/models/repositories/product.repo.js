@@ -6,6 +6,11 @@ const {
   clothing,
   furniture,
 } = require("../product.model");
+const {
+  getSelectData,
+  unGetSelectData,
+  convertToObjectIdMongodb,
+} = require("../../utils");
 const { mongoose } = require("mongoose");
 const findAllDraftsForShop = async ({ query, limit, skip }) => {
   return await queryProduct({ query, limit, skip });
@@ -24,8 +29,64 @@ const publishProductByShop = async ({ product_shop, product_id }) => {
   return saved; // trả về document đã cập nhật
 };
 
+const unPublishProductByShop = async ({ product_shop, product_id }) => {
+  const foundShop = await product.findOne({
+    product_shop: product_shop,
+    _id: product_id,
+  });
+
+  if (!foundShop) return null;
+  foundShop.isDraft = true;
+  foundShop.isPublished = false;
+  const saved = await foundShop.save();
+  return saved; // trả về document đã cập nhật
+};
+
 const findAllPublishedForShop = async ({ query, limit, skip }) => {
   return await queryProduct({ query, limit, skip });
+};
+
+const searchProductByUser = async ({ keySearch }) => {
+  const regexSearch = new RegExp(keySearch); // 'i' for case-insensitive
+  const results = await product
+    .find(
+      {
+        isPublished: true,
+        $text: { $search: regexSearch },
+      },
+      { score: { $meta: "textScore" } }
+    )
+    .sort({ score: { $meta: "textScore" } })
+    .lean();
+
+  return results;
+};
+
+const findAllProducts = async ({ limit, sort, page, filter, select }) => {
+  const skip = (page - 1) * limit;
+  const sortBy = sort === "ctime" ? { _id: -1 } : { _id: 1 };
+  const products = await product
+    .find(filter)
+    .sort(sortBy)
+    .skip(skip)
+    .limit(limit)
+    .select(getSelectData(select))
+    .lean()
+    .exec();
+  return products;
+};
+
+const findProduct = async ({ product_id, unSelect }) => {
+  return await product.findById(product_id).select(unGetSelectData(unSelect));
+};
+
+const updateProductById = async ({
+  productId,
+  bodyUpdate,
+  model,
+  isNew = true,
+}) => {
+  return await model.findByIdAndUpdate(productId, bodyUpdate, { new: isNew });
 };
 
 const queryProduct = async ({ query, limit, skip }) => {
@@ -38,8 +99,38 @@ const queryProduct = async ({ query, limit, skip }) => {
     .lean()
     .exec();
 };
+
+const getProductById = async ({ productId }) => {
+  return await product
+    .findOne({ _id: convertToObjectIdMongodb(productId) })
+    .lean();
+};
+
+const checkProductByServer = async (products) => {
+  return await Promise.all(
+    products.map(async (product) => {
+      const foundProduct = await getProductById({
+        productId: product.productId,
+      });
+      if (foundProduct) {
+        return {
+          price: foundProduct.product_price,
+          quantity: foundProduct.product_quantity,
+          productId: product.productId,
+        };
+      }
+    })
+  );
+};
 module.exports = {
   findAllDraftsForShop,
   publishProductByShop,
   findAllPublishedForShop,
+  unPublishProductByShop,
+  searchProductByUser,
+  findAllProducts,
+  findProduct,
+  updateProductById,
+  getProductById,
+  checkProductByServer,
 };

@@ -6,27 +6,43 @@ const {
   electronic,
   furniture,
 } = require("../models/product.model");
+const { insertInventory } = require("../models/repositories/inventory.repo");
 const {
   findAllDraftsForShop,
   publishProductByShop,
   findAllPublishedForShop,
+  searchProductByUser,
+  findAllProducts,
+  findProduct,
+  updateProductById,
 } = require("../models/repositories/product.repo");
+const { removeUndefinedObject, updateNestedObjectParser } = require("../utils");
 
 //define Factory class to create product instances based on type
 class ProductFactory {
   /* 
     type: Electronics, Clothing, Furniture
   */
+  static productRegistry = {};
+
+  static registerProductType(type, classRef) {
+    ProductFactory.productRegistry[type] = classRef;
+  }
+
   static async createProduct(type, payload) {
-    switch (type) {
-      case "Electronic":
-        console.log("Creating electronic product");
-        return new Electronic(payload).createProduct();
-      case "Clothing":
-        return new Clothing(payload).createProduct();
-      default:
-        throw new BadRequestError(`Invalid product type: ${type}`);
-    }
+    const productClass = ProductFactory.productRegistry[type];
+    console.log("productClass:", productClass);
+    if (!productClass)
+      throw new BadRequestError(`Invalid product type: ${type}`);
+    return new productClass(payload).createProduct();
+  }
+
+  static async updateProduct(type, productId, payload) {
+    const productClass = ProductFactory.productRegistry[type];
+    console.log("productClass:", productClass);
+    if (!productClass)
+      throw new BadRequestError(`Invalid product type: ${type}`);
+    return new productClass(payload).updateProduct(productId);
   }
 
   //query
@@ -41,10 +57,45 @@ class ProductFactory {
     return shop;
   }
 
+  static async unPublishProductByShop({ product_shop, product_id }) {
+    const shop = await publishProductByShop({ product_shop, product_id });
+    return shop;
+  }
+
   //QUERY
   static async findAllPublishedForShop({ product_shop, limit = 50, skip = 0 }) {
     const query = { product_shop, isPublished: true };
     return await findAllPublishedForShop({ query, limit, skip });
+  }
+
+  static async searchProducts({ keySearch }) {
+    return await searchProductByUser({ keySearch });
+  }
+
+  static async findAllProducts({
+    limit = 50,
+    sort = "ctime",
+    page = 1,
+    filter = { isPublished: true },
+  }) {
+    return await findAllProducts({
+      limit,
+      sort,
+      page,
+      filter,
+      select: [
+        "product_name",
+        "product_price",
+        "product_thumb",
+        "product_shop",
+      ],
+    });
+  }
+  static async findProduct({ product_id }) {
+    return await findProduct({
+      product_id,
+      unSelect: ["__v"],
+    });
   }
 }
 
@@ -72,7 +123,24 @@ class Product {
 
   //create new product
   async createProduct(product_id) {
-    return await product.create({ ...this, _id: product_id });
+    const newProduct = await product.create({ ...this, _id: product_id });
+    if (newProduct) {
+      //add product stock to inventory
+      insertInventory({
+        product_id: newProduct._id,
+        stock: this.product_quantity,
+        shop_id: this.product_shop,
+      });
+    }
+    return newProduct;
+  }
+
+  async updateProduct(productId, bodyUpdate) {
+    return await updateProductById({
+      productId,
+      bodyUpdate,
+      model: product,
+    });
   }
 }
 
@@ -90,6 +158,25 @@ class Clothing extends Product {
       throw new BadRequestError("Create product error");
     }
     return newProduct;
+  }
+
+  async updateProduct(productId) {
+    //remove attributes that are null or undefined
+    const objectParams = removeUndefinedObject(this);
+    //check xem update o dau
+    if (objectParams.product_attributes) {
+      //update child
+      await updateProductById({
+        productId,
+        bodyUpdate: updateNestedObjectParser(objectParams.product_attributes),
+        model: clothing,
+      });
+    }
+    const updatedProduct = await super.updateProduct(
+      productId,
+      updateNestedObjectParser(objectParams)
+    );
+    return updatedProduct;
   }
 }
 
@@ -111,5 +198,8 @@ class Electronic extends Product {
     return newProduct;
   }
 }
+ProductFactory.registerProductType("Clothing", Clothing);
+ProductFactory.registerProductType("Electronic", Electronic);
+ProductFactory.registerProductType("Furniture", Furniture);
 
 module.exports = ProductFactory;
